@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Workflow Workstation</title>
+  <style>
+    :root { --bg:#090d1f; --panel:#121935; --accent:#7c6cff; --text:#e7ecff; --muted:#9aa5cc; --ok:#48d597; }
+    body{margin:0;font-family:Inter,system-ui,sans-serif;background:radial-gradient(circle at top,#1a2250,#070a18 60%);color:var(--text)}
+    .app{display:grid;grid-template-columns:280px 1fr 320px;gap:12px;padding:12px;height:100vh;box-sizing:border-box}
+    .panel{background:rgba(18,25,53,.86);border:1px solid #2a3566;border-radius:12px;padding:12px;overflow:auto}
+    h1,h2{margin:.3rem 0 .8rem}
+    .node{padding:8px;border:1px solid #38457e;background:#1a2450;border-radius:8px;margin:8px 0;cursor:pointer}
+    .node.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+    .canvas{position:relative}
+    .map{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:10px}
+    .card{padding:10px;border-radius:10px;background:#1a2b41;border:1px solid #2d4466}
+    .tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#26337a;color:#c9d2ff;font-size:12px;margin:2px}
+    button,input,select,textarea{width:100%;box-sizing:border-box;background:#0f1633;color:var(--text);border:1px solid #30407a;border-radius:8px;padding:8px}
+    button{cursor:pointer;background:linear-gradient(90deg,#6b5cff,#8a6fff);border:none;font-weight:600}
+    .muted{color:var(--muted);font-size:13px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .switch{display:flex;justify-content:space-between;align-items:center;border:1px solid #2d3b70;padding:8px;border-radius:8px;margin:6px 0}
+    pre{white-space:pre-wrap;background:#0d1430;padding:8px;border-radius:8px;border:1px solid #2a396f}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <h2>Feature Library</h2>
+      <p class="muted">Core workstation features (click to stage in runtime preview).</p>
+      <div id="featureList"></div>
+      <hr>
+      <h2>Template</h2>
+      <button id="saveTemplate">Save Template</button>
+      <button id="loadTemplate" style="margin-top:8px">Load Template</button>
+      <button id="resetTemplate" style="margin-top:8px">Reset</button>
+    </aside>
+
+    <main class="panel canvas">
+      <h1>AI Workflow Workstation</h1>
+      <p class="muted">Planner → Router → Data Store → Validation → Final response pattern with configurable layers.</p>
+      <div id="map" class="map"></div>
+      <h2>Project System Log</h2>
+      <pre id="systemLog"></pre>
+    </main>
+
+    <aside class="panel">
+      <h2>Admin Options</h2>
+      <p class="muted">Every runtime function has a switch here for safe operations.</p>
+      <div id="adminSwitches"></div>
+      <h2>Portability</h2>
+      <div class="row">
+        <button id="exportJson">Export JSON</button>
+        <button id="importJson">Import JSON</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="downloadPackage">Download Package</button>
+        <button id="uploadPackage">Upload Package</button>
+      </div>
+      <input id="fileInput" type="file" accept="application/json" style="margin-top:8px;display:none"/>
+    </aside>
+  </div>
+
+<script>
+const featureCatalog = [
+  { id: 'templateManager', title: 'Template Manager', desc: 'Save, duplicate, and reuse full workflow templates.' },
+  { id: 'stepBuilder', title: 'Step & Field Builder', desc: 'Create flow steps, prompts, and custom fields.' },
+  { id: 'logicPricing', title: 'Logic & Pricing Editor', desc: 'Conditional visibility, IF/THEN rules, and cost logic.' },
+  { id: 'runtimeRenderer', title: 'Runtime Renderer', desc: 'Live preview for user-facing workflow execution.' },
+  { id: 'dynamicForms', title: 'Dynamic Form Generation', desc: 'Schema-driven forms with validation.' },
+  { id: 'brandingThemes', title: 'Branding & Themes', desc: 'Color, typography, and layout presets.' },
+  { id: 'jsonImportExport', title: 'JSON Import/Export', desc: 'Move setups to another device without breaking.' },
+  { id: 'portableBundle', title: 'Portable Bundle Download', desc: 'Single package includes config + metadata + version.' }
+];
+
+const state = {
+  enabled: Object.fromEntries(featureCatalog.map(f => [f.id, true])),
+  selected: [],
+  version: '1.0.0',
+  updatedAt: new Date().toISOString()
+};
+
+function renderFeatures() {
+  const el = document.getElementById('featureList');
+  el.innerHTML = featureCatalog.map(f => `<div class="node ${state.selected.includes(f.id) ? 'active' : ''}" data-id="${f.id}"><strong>${f.title}</strong><div class="muted">${f.desc}</div></div>`).join('');
+  el.querySelectorAll('.node').forEach(node => node.onclick = () => toggleFeatureSelection(node.dataset.id));
+}
+
+function renderAdminSwitches() {
+  const el = document.getElementById('adminSwitches');
+  el.innerHTML = featureCatalog.map(f => `
+    <label class="switch"><span>${f.title}</span>
+      <input type="checkbox" ${state.enabled[f.id] ? 'checked' : ''} data-id="${f.id}" />
+    </label>`).join('');
+  el.querySelectorAll('input[type="checkbox"]').forEach(box => box.onchange = () => toggleFunction(box.dataset.id, box.checked));
+}
+
+function renderMap() {
+  const map = document.getElementById('map');
+  const live = featureCatalog.filter(f => state.selected.includes(f.id) && state.enabled[f.id]);
+  map.innerHTML = live.length ? live.map(f => `<div class="card"><strong>${f.title}</strong><p class="muted">${f.desc}</p><span class="tag">Enabled</span></div>`).join('') : '<p class="muted">No active features selected.</p>';
+}
+
+function toggleFeatureSelection(id) {
+  if (!state.enabled[id]) return log(`Cannot stage ${id}: function disabled in admin options.`);
+  state.selected = state.selected.includes(id) ? state.selected.filter(x => x !== id) : [...state.selected, id];
+  state.updatedAt = new Date().toISOString();
+  log(`Feature ${id} ${state.selected.includes(id) ? 'staged' : 'unstaged'} in runtime.`);
+  renderFeatures();
+  renderMap();
+}
+
+function toggleFunction(id, enabled) {
+  state.enabled[id] = enabled;
+  if (!enabled) state.selected = state.selected.filter(x => x !== id);
+  state.updatedAt = new Date().toISOString();
+  log(`Function ${id} ${enabled ? 'enabled' : 'disabled'} by admin switch.`);
+  renderFeatures();
+  renderMap();
+}
+
+function saveTemplate() { localStorage.setItem('ai_workstation_template', JSON.stringify(state)); log('Template saved locally.'); }
+function loadTemplate() {
+  const raw = localStorage.getItem('ai_workstation_template');
+  if (!raw) return log('No template found.');
+  Object.assign(state, JSON.parse(raw));
+  log('Template loaded from local storage.');
+  refresh();
+}
+function resetTemplate() {
+  localStorage.removeItem('ai_workstation_template');
+  Object.assign(state, { enabled: Object.fromEntries(featureCatalog.map(f => [f.id, true])), selected: [], version: '1.0.0', updatedAt: new Date().toISOString() });
+  log('Template reset.');
+  refresh();
+}
+
+function exportJson() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'workstation-config.json' });
+  a.click();
+  log('Exported JSON config.');
+}
+function importJson() { document.getElementById('fileInput').click(); }
+function downloadPackage() { exportJson(); log('Portable package downloaded (JSON config).'); }
+function uploadPackage() { document.getElementById('fileInput').click(); }
+
+function onFileLoad(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      Object.assign(state, data);
+      log('Config package imported successfully.');
+      refresh();
+    } catch {
+      log('Import failed: invalid JSON package.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function log(msg) {
+  const current = document.getElementById('systemLog').textContent;
+  document.getElementById('systemLog').textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n${current}`.trim();
+}
+
+function refresh() { renderFeatures(); renderAdminSwitches(); renderMap(); }
+
+// boot
+refresh();
+document.getElementById('saveTemplate').onclick = saveTemplate;
+document.getElementById('loadTemplate').onclick = loadTemplate;
+document.getElementById('resetTemplate').onclick = resetTemplate;
+document.getElementById('exportJson').onclick = exportJson;
+document.getElementById('importJson').onclick = importJson;
+document.getElementById('downloadPackage').onclick = downloadPackage;
+document.getElementById('uploadPackage').onclick = uploadPackage;
+document.getElementById('fileInput').onchange = onFileLoad;
+log('Workstation initialized.');
+</script>
+</body>
+</html>
